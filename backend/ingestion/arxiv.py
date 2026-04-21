@@ -1,5 +1,3 @@
-"""Fetch recent papers from arXiv cs.AI and cs.LG."""
-import hashlib
 import logging
 from datetime import datetime, timezone
 
@@ -7,15 +5,14 @@ import arxiv
 
 logger = logging.getLogger(__name__)
 
-CATEGORIES = ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
-MAX_RESULTS_PER_CATEGORY = 20
+CATEGORIES = ["cs.AI", "cs.LG", "cs.CL"]
+MAX_RESULTS_PER_CATEGORY = 25
 
 
-def fetch_arxiv_papers() -> list[dict]:
-    """Return normalized content items from arXiv."""
+def fetch_arxiv_papers(source_id: int) -> list[dict]:
+    """Return raw story dicts for pipeline. external_id = arxiv paper ID."""
     items: list[dict] = []
-    seen_ids: set[str] = set()
-
+    seen: set[str] = set()
     client = arxiv.Client()
 
     for category in CATEGORIES:
@@ -26,24 +23,20 @@ def fetch_arxiv_papers() -> list[dict]:
                 sort_by=arxiv.SortCriterion.SubmittedDate,
             )
             for result in client.results(search):
-                arxiv_id = result.entry_id.split("/")[-1]
-                item_id = f"arxiv_{arxiv_id}"
-                if item_id in seen_ids:
+                arxiv_id = result.entry_id.split("/")[-1].split("v")[0]
+                if arxiv_id in seen:
                     continue
-                seen_ids.add(item_id)
-
-                abstract = result.summary.replace("\n", " ").strip()
-                items.append(
-                    {
-                        "id": item_id,
-                        "title": result.title,
-                        "content": abstract,
-                        "source": "arxiv",
-                        "url": result.entry_id,
-                        "author": ", ".join(a.name for a in result.authors[:3]),
-                        "published_at": result.published or datetime.now(timezone.utc),
-                    }
-                )
+                seen.add(arxiv_id)
+                items.append({
+                    "source_id": source_id,
+                    "external_id": arxiv_id,
+                    "url": f"https://arxiv.org/abs/{arxiv_id}",
+                    "title": result.title.strip(),
+                    "raw_content": result.summary.replace("\n", " ").strip(),
+                    "author": ", ".join(a.name for a in result.authors[:3]),
+                    "published_at": result.published or datetime.now(timezone.utc),
+                    "source_name": "arxiv",
+                })
         except Exception as exc:
             logger.error("arXiv fetch failed for %s: %s", category, exc)
 
