@@ -25,6 +25,11 @@ def _get_session_factory():
     return _SessionLocal
 
 
+def SessionLocal():
+    """Return a new database session (caller is responsible for closing)."""
+    return _get_session_factory()()
+
+
 def get_db():
     db = _get_session_factory()()
     try:
