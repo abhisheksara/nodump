@@ -1,8 +1,8 @@
 [build]
-dockerfilePath = "Dockerfile"
+builder = "nixpacks"
 
 [deploy]
-startCommand = "node server.js"
+startCommand = "node .next/standalone/server.js"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 healthcheckPath = "/"
