@@ -11,7 +11,11 @@ from config import settings
 from db.database import init_db, seed_sources
 from ingestion.scheduler import start_scheduler, stop_scheduler
 
+# basicConfig is a no-op if uvicorn already attached handlers, so force the
+# root logger level explicitly — otherwise all app logger.info() calls are
+# silently dropped because uvicorn leaves the root at WARNING.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
+logging.getLogger().setLevel(logging.INFO)
 
 app = FastAPI(title="Signal Engine", version="1.0.0")
 

@@ -80,7 +80,8 @@ def _attach_handler() -> None:
     root = logging.getLogger()
     if not any(isinstance(x, _BufferHandler) for x in root.handlers):
         root.addHandler(h)
-    # Explicitly attach to pipeline loggers in case propagation is suppressed
+    # Explicitly attach to pipeline loggers in case propagation is suppressed,
+    # and force INFO level so logger.info() calls aren't dropped.
     for name in (
         "ingestion.arxiv",
         "ingestion.hn",
@@ -92,6 +93,7 @@ def _attach_handler() -> None:
         "delivery.email",
     ):
         lg = logging.getLogger(name)
+        lg.setLevel(logging.INFO)
         if not any(isinstance(x, _BufferHandler) for x in lg.handlers):
             lg.addHandler(h)
 
