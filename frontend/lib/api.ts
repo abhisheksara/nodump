@@ -1,4 +1,4 @@
-import type { Source, Story } from "./types";
+import type { AdminStats, NudgeLogEntry, RunEntry, RunFile, SchedulerJob, Source, Story } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -32,4 +32,13 @@ export const api = {
       body: JSON.stringify({ active }),
     }),
   refresh: () => request("/refresh", { method: "POST" }),
+
+  adminStats: () => request<AdminStats>("/admin/stats"),
+  adminScheduler: () => request<SchedulerJob[]>("/admin/scheduler"),
+  adminRuns: () => request<RunFile[]>("/admin/runs"),
+  adminRunDetail: (filename: string) => request<RunEntry[]>(`/admin/runs/${filename}`),
+  adminTriggerAll: () => request<{ status: string }>("/admin/trigger/ingestion", { method: "POST" }),
+  adminTriggerSource: (name: string) => request<{ status: string }>(`/admin/trigger/ingestion/${name}`, { method: "POST" }),
+  adminTriggerNudge: () => request<{ status: string }>("/admin/trigger/nudge", { method: "POST" }),
+  adminNudgeLogs: () => request<NudgeLogEntry[]>("/admin/nudge-logs"),
 };

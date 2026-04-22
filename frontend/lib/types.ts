@@ -27,3 +27,45 @@ export interface Source {
   fetch_interval_mins: number;
   last_fetched_at: string | null;
 }
+
+export interface AdminStats {
+  total_stories: number;
+  stories_last_24h: number;
+  stories_last_7d: number;
+  by_relevance: Record<string, number>;
+  by_sub_domain: Record<string, number>;
+  by_source: Record<string, number>;
+  user_states: Record<string, number>;
+  unread_high: number;
+}
+
+export interface SchedulerJob {
+  id: string;
+  next_run_time: string | null;
+  trigger: string;
+}
+
+export interface RunFile {
+  filename: string;
+  timestamp: string;
+  size_bytes: number;
+}
+
+export interface RunEntry {
+  ts: string | null;
+  action: string | null;
+  title: string | null;
+  url: string | null;
+  triage_label: string | null;
+  relevance_label: string | null;
+  relevance_score: number | null;
+  sub_domain: string | null;
+  error: string | null;
+}
+
+export interface NudgeLogEntry {
+  id: number;
+  sent_at: string;
+  stories_count: number;
+  top_story_id: string | null;
+}

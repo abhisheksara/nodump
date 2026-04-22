@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.admin import router as admin_router
 from api.queue import router as queue_router
 from api.sources import router as sources_router
 from api.stories import router as stories_router
@@ -22,6 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin_router)
 app.include_router(queue_router)
 app.include_router(stories_router)
 app.include_router(sources_router)
