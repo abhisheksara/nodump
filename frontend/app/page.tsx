@@ -1,52 +1,96 @@
-import FeedList from "@/components/FeedList";
-import ChatPanel from "@/components/ChatPanel";
+"use client";
 
-export default function Home() {
+import { useCallback, useEffect, useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
+import { DomainTabs } from "@/components/DomainTabs";
+import { StoryCard } from "@/components/StoryCard";
+import { api } from "@/lib/api";
+import type { Story } from "@/lib/types";
+
+export default function QueuePage() {
+  const [stories, setStories] = useState<Story[]>([]);
+  const [domain, setDomain] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setStories(await api.queue(domain || undefined));
+    } finally {
+      setLoading(false);
+    }
+  }, [domain]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const remove = (id: string) =>
+    setStories((prev) => prev.filter((s) => s.id !== id));
+
+  const handleRead = async (id: string) => {
+    await api.markRead(id);
+    remove(id);
+  };
+  const handleSkip = async (id: string) => {
+    await api.markSkip(id);
+    remove(id);
+  };
+  const handleSave = async (id: string) => {
+    await api.markSave(id);
+    remove(id);
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await api.refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-baseline justify-between">
-          <div>
-            <h1 className="text-base font-bold text-zinc-100 tracking-tight">
-              AI Research Feed
-            </h1>
-            <p className="text-xs text-zinc-600 mt-0.5">
-              5 things in AI today — curated and explained for you
-            </p>
-          </div>
-          <span className="text-xs text-zinc-700">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </span>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-zinc-100">Queue</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">Top unread from the last 30 days</p>
         </div>
-      </header>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+        >
+          <RefreshCwIcon size={13} className={refreshing ? "animate-spin" : ""} />
+          {refreshing ? "Running…" : "Refresh"}
+        </button>
+      </div>
 
-      {/* Main layout */}
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8">
-          {/* Feed */}
-          <section>
-            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-4">
-              Today&apos;s Feed
-            </h2>
-            <FeedList />
-          </section>
+      <DomainTabs active={domain} onChange={setDomain} />
 
-          {/* Chat sidebar */}
-          <aside>
-            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-4">
-              Ask Your Feed
-            </h2>
-            <div className="border border-zinc-800 rounded-lg p-4 sticky top-6">
-              <ChatPanel />
-            </div>
-          </aside>
+      {loading ? (
+        <div className="flex flex-col gap-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-40 rounded-xl bg-zinc-900 animate-pulse" />
+          ))}
         </div>
-      </main>
+      ) : stories.length === 0 ? (
+        <p className="text-zinc-500 text-sm py-12 text-center">
+          Queue is empty — run a refresh or wait for the scheduler.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {stories.map((s) => (
+            <StoryCard
+              key={s.id}
+              story={s}
+              onRead={handleRead}
+              onSkip={handleSkip}
+              onSave={handleSave}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
