@@ -40,7 +40,10 @@ def _run_startup():
 
 @app.on_event("startup")
 async def startup():
-    _run_startup()
+    try:
+        _run_startup()
+    except Exception as exc:
+        logger.error("Startup failed (app will still serve traffic): %s", exc)
 
 
 @app.on_event("shutdown")
