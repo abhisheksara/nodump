@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     email_to: str = "abhisheksara27@gmail.com"
 
+    allowed_origins: str = "http://localhost:3000"
+
     runs_dir: str = "./runs"
     runs_retention_days: int = 30
 

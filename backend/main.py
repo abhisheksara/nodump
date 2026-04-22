@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.queue import router as queue_router
 from api.sources import router as sources_router
 from api.stories import router as stories_router
+from config import settings
 from db.database import init_db, seed_sources
 from ingestion.scheduler import start_scheduler, stop_scheduler
 
@@ -15,7 +16,7 @@ app = FastAPI(title="Signal Engine", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[o.strip() for o in settings.allowed_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
