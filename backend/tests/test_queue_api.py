@@ -10,14 +10,18 @@ from db.models import Story, UserStoryState
 def client(db):
     import main as main_module
     from db.database import get_db
+    from unittest.mock import patch
 
     def override():
         yield db
 
     main_module.app.dependency_overrides[get_db] = override
-    # skip scheduler/init_db on startup for tests
-    with TestClient(main_module.app, raise_server_exceptions=True) as c:
-        yield c
+    with (
+        patch("main._run_startup"),
+        patch("main.stop_scheduler"),
+    ):
+        with TestClient(main_module.app, raise_server_exceptions=True) as c:
+            yield c
     main_module.app.dependency_overrides.clear()
 
 
