@@ -69,3 +69,17 @@ export interface NudgeLogEntry {
   stories_count: number;
   top_story_id: string | null;
 }
+
+export interface PipelineLogEntry {
+  ts: string;
+  level: string;
+  logger: string;
+  msg: string;
+}
+
+export interface PipelineLogSnapshot {
+  running: boolean;
+  label: string;
+  started_at: string | null;
+  entries: PipelineLogEntry[];
+}

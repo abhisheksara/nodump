@@ -2,6 +2,7 @@
 import json
 import logging
 import threading
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,6 +17,65 @@ from db.models import NudgeLog, Source, Story, UserStoryState
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+# ---------------------------------------------------------------------------
+# In-memory pipeline log buffer
+# ---------------------------------------------------------------------------
+
+class _PipelineBuffer:
+    def __init__(self, maxlen: int = 500):
+        self._lock = threading.Lock()
+        self._entries: deque[dict] = deque(maxlen=maxlen)
+        self._running = False
+        self._label = ""
+        self._started_at: str | None = None
+
+    def start(self, label: str) -> None:
+        with self._lock:
+            self._running = True
+            self._label = label
+            self._started_at = datetime.now(timezone.utc).isoformat()
+            self._entries.clear()
+
+    def finish(self) -> None:
+        with self._lock:
+            self._running = False
+
+    def add(self, level: str, name: str, msg: str) -> None:
+        with self._lock:
+            self._entries.append({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "level": level,
+                "logger": name,
+                "msg": msg,
+            })
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {
+                "running": self._running,
+                "label": self._label,
+                "started_at": self._started_at,
+                "entries": list(self._entries),
+            }
+
+
+_buffer = _PipelineBuffer()
+
+
+class _BufferHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            _buffer.add(record.levelname, record.name, self.format(record))
+        except Exception:
+            pass
+
+
+# Attach once to root logger so all pipeline logger.* calls flow in.
+_handler = _BufferHandler()
+_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_handler)
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +189,7 @@ def get_scheduler():
 
 
 # ---------------------------------------------------------------------------
-# Run logs
+# Run logs (JSONL files on disk)
 # ---------------------------------------------------------------------------
 
 class RunFile(BaseModel):
@@ -191,6 +251,35 @@ def get_run(filename: str):
 
 
 # ---------------------------------------------------------------------------
+# Pipeline log (live in-memory)
+# ---------------------------------------------------------------------------
+
+class PipelineLogEntry(BaseModel):
+    ts: str
+    level: str
+    logger: str
+    msg: str
+
+
+class PipelineLogSnapshot(BaseModel):
+    running: bool
+    label: str
+    started_at: str | None
+    entries: list[PipelineLogEntry]
+
+
+@router.get("/pipeline-log", response_model=PipelineLogSnapshot)
+def get_pipeline_log():
+    snap = _buffer.snapshot()
+    return PipelineLogSnapshot(
+        running=snap["running"],
+        label=snap["label"],
+        started_at=snap["started_at"],
+        entries=[PipelineLogEntry(**e) for e in snap["entries"]],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Triggers
 # ---------------------------------------------------------------------------
 
@@ -198,15 +287,29 @@ class TriggerResult(BaseModel):
     status: str
 
 
-def _bg(target, *args):
-    threading.Thread(target=target, args=args, daemon=True).start()
+def _run_with_log(label: str, target, *args):
+    _buffer.start(label)
+    try:
+        target(*args)
+    finally:
+        _buffer.finish()
+
+
+def _bg(label: str, target, *args):
+    threading.Thread(
+        target=_run_with_log, args=(label, target, *args), daemon=True
+    ).start()
 
 
 @router.post("/trigger/ingestion", response_model=TriggerResult)
 def trigger_all():
     from ingestion.scheduler import _run_source
-    _bg(_run_source, "arxiv")
-    _bg(_run_source, "hackernews")
+
+    def _both():
+        _run_source("arxiv")
+        _run_source("hackernews")
+
+    _bg("ingestion: all sources", _both)
     return TriggerResult(status="started")
 
 
@@ -215,14 +318,14 @@ def trigger_source(source_name: str):
     if source_name not in ("arxiv", "hackernews"):
         raise HTTPException(status_code=400, detail="Unknown source. Use 'arxiv' or 'hackernews'")
     from ingestion.scheduler import _run_source
-    _bg(_run_source, source_name)
+    _bg(f"ingestion: {source_name}", _run_source, source_name)
     return TriggerResult(status="started")
 
 
 @router.post("/trigger/nudge", response_model=TriggerResult)
 def trigger_nudge():
     from ingestion.scheduler import _send_nudge
-    _bg(_send_nudge)
+    _bg("nudge", _send_nudge)
     return TriggerResult(status="started")
 
 

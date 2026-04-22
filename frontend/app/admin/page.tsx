@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   AdminStats,
   NudgeLogEntry,
+  PipelineLogEntry,
   RunEntry,
   RunFile,
   SchedulerJob,
@@ -133,6 +134,68 @@ function Section({
       <h2 className="text-xs font-medium uppercase tracking-widest text-zinc-500">{title}</h2>
       {children}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Live log panel
+// ---------------------------------------------------------------------------
+
+const LEVEL_COLOR: Record<string, string> = {
+  INFO: "text-zinc-400",
+  WARNING: "text-amber-400",
+  ERROR: "text-red-400",
+  DEBUG: "text-zinc-600",
+};
+
+function LiveLog({
+  running,
+  label,
+  entries,
+}: {
+  running: boolean;
+  label: string;
+  entries: PipelineLogEntry[];
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [entries.length]);
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900">
+        {running && (
+          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+        )}
+        {!running && entries.length > 0 && (
+          <span className="inline-block h-2 w-2 rounded-full bg-zinc-600" />
+        )}
+        <span className="font-mono text-xs text-zinc-300">{label || "pipeline"}</span>
+        {running && <span className="text-xs text-zinc-500">running…</span>}
+        {!running && entries.length > 0 && (
+          <span className="text-xs text-zinc-500">done</span>
+        )}
+      </div>
+      <div className="max-h-72 overflow-y-auto px-4 py-3 flex flex-col gap-0.5 font-mono text-xs">
+        {entries.length === 0 && (
+          <span className="text-zinc-600">Waiting for output…</span>
+        )}
+        {entries.map((e, i) => (
+          <div key={i} className="flex gap-2 leading-5">
+            <span className="shrink-0 text-zinc-700">
+              {new Date(e.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+            <span className={`shrink-0 w-14 ${LEVEL_COLOR[e.level] ?? "text-zinc-500"}`}>
+              {e.level}
+            </span>
+            <span className="text-zinc-300 break-all">{e.msg}</span>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+    </div>
   );
 }
 
@@ -293,6 +356,47 @@ export default function AdminPage() {
     nudge: { status: "idle", message: "" },
   });
 
+  const [pipelineLog, setPipelineLog] = useState<{
+    running: boolean;
+    label: string;
+    entries: PipelineLogEntry[];
+  } | null>(null);
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    // Poll every 1.5s; when pipeline finishes, do a final refresh and stop.
+    pollRef.current = setInterval(async () => {
+      try {
+        const snap = await api.adminPipelineLog();
+        setPipelineLog({
+          running: snap.running,
+          label: snap.label,
+          entries: snap.entries,
+        });
+        if (!snap.running) {
+          stopPolling();
+          // Refresh runs list and stats once the pipeline is done.
+          const [r, s] = await Promise.all([api.adminRuns(), api.adminStats()]);
+          setRuns(r);
+          setStats(s);
+        }
+      } catch {
+        stopPolling();
+      }
+    }, 1500);
+  }, [stopPolling]);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -326,9 +430,11 @@ export default function AdminPage() {
       else await api.adminTriggerSource(key);
       setTriggers((prev) => ({
         ...prev,
-        [key]: { status: "done", message: "Running in background" },
+        [key]: { status: "done", message: "Pipeline running — see logs below" },
       }));
-    } catch (e) {
+      setPipelineLog({ running: true, label: "", entries: [] });
+      startPolling();
+    } catch {
       setTriggers((prev) => ({
         ...prev,
         [key]: { status: "error", message: "Failed to start" },
@@ -528,9 +634,18 @@ export default function AdminPage() {
             onClick={() => trigger("nudge")}
           />
         </div>
-        <p className="text-xs text-zinc-600">
-          Triggers run in the background — check run logs below for results.
-        </p>
+        {pipelineLog && (
+          <LiveLog
+            running={pipelineLog.running}
+            label={pipelineLog.label}
+            entries={pipelineLog.entries}
+          />
+        )}
+        {!pipelineLog && (
+          <p className="text-xs text-zinc-600">
+            Trigger a run — live logs appear here, run logs update when complete.
+          </p>
+        )}
       </Section>
 
       {/* Run logs */}
