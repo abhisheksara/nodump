@@ -72,10 +72,31 @@ class _BufferHandler(logging.Handler):
             pass
 
 
-# Attach once to root logger so all pipeline logger.* calls flow in.
-_handler = _BufferHandler()
-_handler.setFormatter(logging.Formatter("%(message)s"))
-logging.getLogger().addHandler(_handler)
+def _attach_handler() -> None:
+    """Wire the buffer handler to root + key pipeline loggers."""
+    h = _BufferHandler()
+    h.setFormatter(logging.Formatter("%(message)s"))
+    # Root logger — catches anything that propagates up
+    root = logging.getLogger()
+    if not any(isinstance(x, _BufferHandler) for x in root.handlers):
+        root.addHandler(h)
+    # Explicitly attach to pipeline loggers in case propagation is suppressed
+    for name in (
+        "ingestion.arxiv",
+        "ingestion.hn",
+        "ingestion.scheduler",
+        "ingestion.dedup",
+        "processing.pipeline",
+        "processing.llm",
+        "processing.extractor",
+        "delivery.email",
+    ):
+        lg = logging.getLogger(name)
+        if not any(isinstance(x, _BufferHandler) for x in lg.handlers):
+            lg.addHandler(h)
+
+
+_attach_handler()
 
 
 # ---------------------------------------------------------------------------
@@ -287,18 +308,22 @@ class TriggerResult(BaseModel):
     status: str
 
 
-def _run_with_log(label: str, target, *args):
-    _buffer.start(label)
-    try:
-        target(*args)
-    finally:
-        _buffer.finish()
-
-
 def _bg(label: str, target, *args):
-    threading.Thread(
-        target=_run_with_log, args=(label, target, *args), daemon=True
-    ).start()
+    # start() is called HERE (synchronously) so running=True is set before
+    # the HTTP response returns and the frontend begins polling.
+    _buffer.start(label)
+    _buffer.add("INFO", "admin", f"▶ {label}")
+
+    def _run():
+        try:
+            target(*args)
+            _buffer.add("INFO", "admin", f"✓ {label} complete")
+        except Exception as exc:
+            _buffer.add("ERROR", "admin", f"✗ {label} failed: {exc}")
+        finally:
+            _buffer.finish()
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 @router.post("/trigger/ingestion", response_model=TriggerResult)

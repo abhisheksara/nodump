@@ -373,7 +373,8 @@ export default function AdminPage() {
 
   const startPolling = useCallback(() => {
     stopPolling();
-    // Poll every 1.5s; when pipeline finishes, do a final refresh and stop.
+    let hasSeenRunning = false;
+
     pollRef.current = setInterval(async () => {
       try {
         const snap = await api.adminPipelineLog();
@@ -382,9 +383,10 @@ export default function AdminPage() {
           label: snap.label,
           entries: snap.entries,
         });
-        if (!snap.running) {
+        if (snap.running) hasSeenRunning = true;
+        // Only stop once we've confirmed the run started AND it's now done.
+        if (!snap.running && hasSeenRunning) {
           stopPolling();
-          // Refresh runs list and stats once the pipeline is done.
           const [r, s] = await Promise.all([api.adminRuns(), api.adminStats()]);
           setRuns(r);
           setStats(s);
