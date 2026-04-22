@@ -1,18 +1,32 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from config import settings
-
-engine = create_engine(settings.database_url)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 class Base(DeclarativeBase):
     pass
 
 
+_engine = None
+_SessionLocal = None
+
+
+def _get_engine():
+    global _engine
+    if _engine is None:
+        from config import settings
+        _engine = create_engine(settings.database_url)
+    return _engine
+
+
+def _get_session_factory():
+    global _SessionLocal
+    if _SessionLocal is None:
+        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_get_engine())
+    return _SessionLocal
+
+
 def get_db():
-    db = SessionLocal()
+    db = _get_session_factory()()
     try:
         yield db
     finally:
@@ -21,7 +35,7 @@ def get_db():
 
 def init_db():
     from db import models  # noqa: F401 — ensure models registered
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=_get_engine())
 
 
 def seed_sources(db):
